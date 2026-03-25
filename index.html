@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>贵金属实时大盘</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Noto+Serif+SC:wght@400;600;700;900&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* === RESET & BASE === */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-card: #111118;
+  --bg-card-hover: #16161f;
+  --border: #1e1e2a;
+  --text-primary: #e8e6e1;
+  --text-secondary: #b8b8c8;
+  --text-dim: #8888a0;
+  --gold: #d4a853;
+  --gold-bright: #f0d078;
+  --gold-dim: #8a7030;
+  --gold-bg: rgba(212, 168, 83, 0.06);
+  --silver: #c0c0cc;
+  --silver-bright: #e8e8f0;
+  --silver-dim: #707080;
+  --silver-bg: rgba(192, 192, 204, 0.06);
+  --platinum: #a8b8c8;
+  --platinum-bright: #d0dce8;
+  --platinum-dim: #607080;
+  --platinum-bg: rgba(168, 184, 200, 0.06);
+  --red: #e85454;
+  --red-dim: rgba(232, 84, 84, 0.15);
+  --green: #4ecb71;
+}
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  font-family: 'Outfit', 'Noto Serif SC', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* === NOISE TEXTURE OVERLAY === */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+/* === AMBIENT GLOW === */
+.ambient-glow {
+  position: fixed;
+  width: 600px; height: 600px;
+  border-radius: 50%;
+  filter: blur(150px);
+  opacity: 0.07;
+  pointer-events: none;
+  z-index: 0;
+}
+.glow-gold { background: var(--gold); top: -200px; left: -100px; }
+.glow-silver { background: var(--silver); top: 40%; right: -200px; }
+.glow-platinum { background: var(--platinum); bottom: -200px; left: 30%; }
+
+/* === LAYOUT === */
+.container {
+  position: relative;
+  z-index: 1;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* === HEADER === */
+.header {
+  padding: 48px 0 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 36px;
+}
+.header h1 {
+  font-family: 'Noto Serif SC', serif;
+  font-weight: 900;
+  font-size: 2.6rem;
+  letter-spacing: 0.2em;
+  color: var(--gold-bright);
+  text-align: center;
+}
+.header-meta {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  font-family: 'DM Mono', monospace;
+}
+.update-time {
+  font-size: 1.1rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+.meta-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+}
+.live-clock {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: 0.05em;
+}
+.live-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  background: var(--red);
+  border-radius: 50%;
+  margin-right: 8px;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(232,84,84,0.6); }
+  50% { opacity: 0.6; box-shadow: 0 0 0 6px rgba(232,84,84,0); }
+}
+
+/* === TOP CARDS === */
+.top-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 36px;
+}
+.hero-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+.hero-card:hover {
+  transform: translateY(-2px);
+}
+.hero-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+.hero-card.gold { border-color: rgba(212,168,83,0.2); }
+.hero-card.gold::before { background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+.hero-card.gold:hover { border-color: rgba(212,168,83,0.4); }
+.hero-card.silver { border-color: rgba(192,192,204,0.15); }
+.hero-card.silver::before { background: linear-gradient(90deg, transparent, var(--silver), transparent); }
+.hero-card.silver:hover { border-color: rgba(192,192,204,0.3); }
+.hero-card.platinum { border-color: rgba(168,184,200,0.15); }
+.hero-card.platinum::before { background: linear-gradient(90deg, transparent, var(--platinum), transparent); }
+.hero-card.platinum:hover { border-color: rgba(168,184,200,0.3); }
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.card-label {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.gold .card-label { color: var(--gold); }
+.silver .card-label { color: var(--silver); }
+.platinum .card-label { color: var(--platinum); }
+
+.card-symbol {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  background: rgba(255,255,255,0.03);
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+.intl-price {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.92rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.intl-val { color: var(--text-primary); font-weight: 500; }
+.domestic-price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.domestic-price .big-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 2.6rem;
+  font-weight: 500;
+  line-height: 1;
+  transition: color 0.3s ease;
+}
+.gold .big-num { color: var(--gold-bright); }
+.silver .big-num { color: var(--silver-bright); }
+.platinum .big-num { color: var(--platinum-bright); }
+
+.domestic-price .unit {
+  font-size: 0.96rem;
+  color: var(--text-secondary);
+  font-weight: 300;
+}
+.change-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.change-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.92rem;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: var(--red-dim);
+  color: var(--red);
+}
+.change-badge.up { background: rgba(78,203,113,0.12); color: var(--green); }
+.mini-chart {
+  width: 100%;
+  height: 80px;
+  margin-top: 16px;
+}
+
+/* flash animation */
+@keyframes flash-red { 0%,100% { opacity: 1; } 50% { opacity: 0.5; color: var(--red); } }
+@keyframes flash-green { 0%,100% { opacity: 1; } 50% { opacity: 0.5; color: var(--green); } }
+.flash-down { animation: flash-red 0.4s ease; }
+.flash-up { animation: flash-green 0.4s ease; }
+
+/* === DETAIL SECTIONS === */
+.detail-sections {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 40px;
+}
+.detail-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.detail-section-header {
+  padding: 18px 22px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.detail-section-title {
+  font-family: 'Noto Serif SC', serif;
+  font-weight: 700;
+  font-size: 0.92rem;
+  letter-spacing: 0.05em;
+}
+.detail-section.gold-section .detail-section-title { color: var(--gold); }
+.detail-section.silver-section .detail-section-title { color: var(--silver); }
+.detail-section.platinum-section .detail-section-title { color: var(--platinum); }
+
+.detail-section-count {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.detail-table tr {
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  transition: background 0.2s ease;
+}
+.detail-table tr:last-child { border-bottom: none; }
+.detail-table tr:hover { background: rgba(255,255,255,0.02); }
+.detail-table td {
+  padding: 11px 22px;
+  font-size: 0.96rem;
+}
+.detail-table td:first-child {
+  color: var(--text-primary);
+  font-weight: 400;
+}
+.detail-table td:nth-child(2) {
+  font-family: 'DM Mono', monospace;
+  font-weight: 500;
+  text-align: right;
+  color: var(--text-primary);
+}
+.detail-table td:nth-child(3) {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.88rem;
+  text-align: right;
+  color: var(--red);
+  width: 70px;
+}
+
+/* === FOOTER === */
+.footer {
+  text-align: center;
+  padding: 30px 0 40px;
+  border-top: 1px solid var(--border);
+  font-family: 'DM Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  line-height: 1.8;
+}
+
+/* === RESPONSIVE === */
+@media (max-width: 1024px) {
+  .top-cards { grid-template-columns: 1fr; }
+  .detail-sections { grid-template-columns: 1fr; }
+  .header h1 { font-size: 1.5rem; }
+  .domestic-price .big-num { font-size: 2rem; }
+}
+@media (max-width: 600px) {
+  .container { padding: 0 14px; }
+  .header { padding: 24px 0 10px; }
+  .hero-card { padding: 20px; }
+  .live-clock { font-size: 1.2rem; }
+}
+
+/* === ENTRANCE ANIMATIONS === */
+.hero-card, .detail-section {
+  opacity: 0;
+  transform: translateY(20px);
+  animation: fadeUp 0.6s ease forwards;
+}
+.hero-card:nth-child(1) { animation-delay: 0.1s; }
+.hero-card:nth-child(2) { animation-delay: 0.2s; }
+.hero-card:nth-child(3) { animation-delay: 0.3s; }
+.detail-section:nth-child(1) { animation-delay: 0.4s; }
+.detail-section:nth-child(2) { animation-delay: 0.5s; }
+.detail-section:nth-child(3) { animation-delay: 0.6s; }
+@keyframes fadeUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+</style>
+</head>
+<body>
+
+<!-- AMBIENT GLOWS -->
+<div class="ambient-glow glow-gold"></div>
+<div class="ambient-glow glow-silver"></div>
+<div class="ambient-glow glow-platinum"></div>
+
+<div class="container">
+  <!-- HEADER -->
+  <header class="header">
+    <h1>贵金属实时大盘</h1>
+    <div class="header-meta">
+      <div class="update-time">数据更新 2026-03-25</div>
+      <div class="meta-divider"></div>
+      <div class="live-clock"><span class="live-dot"></span><span id="clock">--:--:--</span></div>
+    </div>
+  </header>
+
+  <!-- TOP 3 HERO CARDS -->
+  <section class="top-cards">
+    <!-- GOLD -->
+    <div class="hero-card gold">
+      <div class="card-header">
+        <span class="card-label">黄 金</span>
+        <span class="card-symbol">XAU / AU9999</span>
+      </div>
+      <div class="intl-price">国际现货 <span class="intl-val" id="intl-gold">4,494.02</span> 美元/盎司</div>
+      <div class="domestic-price">
+        <span class="big-num" id="dom-gold">1,002</span>
+        <span class="unit">元/克</span>
+      </div>
+      <div class="change-row">
+        <span class="change-badge" id="badge-gold">-3.32%</span>
+        <span style="font-family:'DM Mono';font-size:0.86rem;color:var(--text-dim)">AU9999 <span id="au9999">999.23</span></span>
+      </div>
+      <div class="mini-chart" id="chart-gold"></div>
+    </div>
+
+    <!-- SILVER -->
+    <div class="hero-card silver">
+      <div class="card-header">
+        <span class="card-label">足 银</span>
+        <span class="card-symbol">XAG / Ag999</span>
+      </div>
+      <div class="intl-price">国际现货 <span class="intl-val" id="intl-silver">67.60</span> 美元/盎司</div>
+      <div class="domestic-price">
+        <span class="big-num" id="dom-silver">16.80</span>
+        <span class="unit">元/克</span>
+      </div>
+      <div class="change-row">
+        <span class="change-badge" id="badge-silver">-7.12%</span>
+        <span style="font-family:'DM Mono';font-size:0.86rem;color:var(--text-dim)">菜百基础银价</span>
+      </div>
+      <div class="mini-chart" id="chart-silver"></div>
+    </div>
+
+    <!-- PLATINUM -->
+    <div class="hero-card platinum">
+      <div class="card-header">
+        <span class="card-label">铂 金</span>
+        <span class="card-symbol">XPT / Pt950</span>
+      </div>
+      <div class="intl-price">国际现货 <span class="intl-val" id="intl-plat">1,925.80</span> 美元/盎司</div>
+      <div class="domestic-price">
+        <span class="big-num" id="dom-plat">504</span>
+        <span class="unit">元/克</span>
+      </div>
+      <div class="change-row">
+        <span class="change-badge" id="badge-plat">-2.36%</span>
+        <span style="font-family:'DM Mono';font-size:0.86rem;color:var(--text-dim)">水贝铂金报价</span>
+      </div>
+      <div class="mini-chart" id="chart-plat"></div>
+    </div>
+  </section>
+
+  <!-- DETAIL TABLES -->
+  <section class="detail-sections">
+    <!-- GOLD DETAIL -->
+    <div class="detail-section gold-section">
+      <div class="detail-section-header">
+        <span class="detail-section-title">黄金 · 品牌金价</span>
+        <span class="detail-section-count">8 brands</span>
+      </div>
+      <table class="detail-table" id="table-gold">
+        <!-- filled by JS -->
+      </table>
+    </div>
+
+    <!-- SILVER DETAIL -->
+    <div class="detail-section silver-section">
+      <div class="detail-section-header">
+        <span class="detail-section-title">足银 · 渠道报价</span>
+        <span class="detail-section-count">5 sources</span>
+      </div>
+      <table class="detail-table" id="table-silver">
+      </table>
+    </div>
+
+    <!-- PLATINUM DETAIL -->
+    <div class="detail-section platinum-section">
+      <div class="detail-section-header">
+        <span class="detail-section-title">铂金 · 渠道报价</span>
+        <span class="detail-section-count">7 sources</span>
+      </div>
+      <table class="detail-table" id="table-plat">
+      </table>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    数据来源：新浪财经 / 金投网，仅供参考，不构成投资建议<br>
+    Precious Metals Dashboard &copy; 2026
+  </footer>
+</div>
+
+<script>
+/* ====== CLOCK ====== */
+function updateClock() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2,'0');
+  const m = String(now.getMinutes()).padStart(2,'0');
+  const s = String(now.getSeconds()).padStart(2,'0');
+  document.getElementById('clock').textContent = h + ':' + m + ':' + s;
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+/* ====== TABLE DATA ====== */
+const goldBrands = [
+  ['周大福', 1375, -50], ['周生生', 1367, -54], ['六福珠宝', 1373, -50],
+  ['老凤祥', 1418, -25], ['老庙黄金', 1374, -32], ['菜百首饰', 1450, -30],
+  ['金至尊', 1373, -50], ['潮宏基', 1397, -50]
+];
+const silverSources = [
+  ['国内白银基础价', 16.80, -0.29], ['菜百基础银价', 16.80, -0.30],
+  ['工行纸白银', 14.15, -0.18], ['建行纸白银', 15.08, -0.22],
+  ['水贝足银999', 15.19, 0]
+];
+const platSources = [
+  ['水贝铂金', 504, -8], ['菜百 PT950', 705, -5], ['菜百 PT990', 710, -5],
+  ['周大福铂金', 745, -6], ['周生生铂金', 745, -6], ['老庙铂金', 745, -6],
+  ['工行纸铂金', 406.57, -9.17]
+];
+
+function fillTable(id, data) {
+  const tb = document.getElementById(id);
+  tb.innerHTML = data.map(function(r) {
+    const ch = r[2] !== 0 ? (r[2] > 0 ? '+' + r[2] : r[2]) : '--';
+    const color = r[2] < 0 ? 'var(--red)' : r[2] > 0 ? 'var(--green)' : 'var(--text-dim)';
+    return '<tr><td>' + r[0] + '</td><td>' + r[1].toLocaleString('zh-CN', {minimumFractionDigits: r[1]%1?2:0}) + ' <small style="color:var(--text-secondary);font-size:0.86rem">元/克</small></td><td style="color:' + color + '">' + ch + '</td></tr>';
+  }).join('');
+}
+fillTable('table-gold', goldBrands);
+fillTable('table-silver', silverSources);
+fillTable('table-plat', platSources);
+
+/* ====== MINI CHARTS ====== */
+function makeChartOption(data, color, areaColors) {
+  return {
+    grid: { top: 8, bottom: 4, left: 4, right: 4 },
+    xAxis: { type: 'category', show: false, data: ['03-19','03-20','03-21','03-22','03-23','03-24','03-25'] },
+    yAxis: { type: 'value', show: false, min: function(v){return v.min - (v.max-v.min)*0.3;} },
+    series: [{
+      type: 'line', data: data, smooth: true, symbol: 'none', lineStyle: { color: color, width: 2 },
+      areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1, areaColors) }
+    }],
+    tooltip: { trigger: 'axis', backgroundColor: '#1a1a24', borderColor: '#2a2a3a', textStyle: { color: '#e8e6e1', fontFamily: 'DM Mono', fontSize: 12 }, formatter: function(p){ return p[0].name + '<br/>' + p[0].value.toLocaleString(); } }
+  };
+}
+
+var cGold = echarts.init(document.getElementById('chart-gold'));
+cGold.setOption(makeChartOption(
+  [1050, 1038, 1025, 1018, 1010, 1005, 1002],
+  '#d4a853',
+  [{offset:0,color:'rgba(212,168,83,0.25)'},{offset:1,color:'rgba(212,168,83,0)'}]
+));
+
+var cSilver = echarts.init(document.getElementById('chart-silver'));
+cSilver.setOption(makeChartOption(
+  [18.20, 17.95, 17.60, 17.30, 17.10, 16.92, 16.80],
+  '#c0c0cc',
+  [{offset:0,color:'rgba(192,192,204,0.2)'},{offset:1,color:'rgba(192,192,204,0)'}]
+));
+
+var cPlat = echarts.init(document.getElementById('chart-plat'));
+cPlat.setOption(makeChartOption(
+  [520, 516, 512, 510, 508, 506, 504],
+  '#a8b8c8',
+  [{offset:0,color:'rgba(168,184,200,0.2)'},{offset:1,color:'rgba(168,184,200,0)'}]
+));
+
+window.addEventListener('resize', function(){ cGold.resize(); cSilver.resize(); cPlat.resize(); });
+
+/* ====== LIVE PRICE FLUCTUATION ====== */
+var liveState = {
+  gold: { intl: 4494.02, dom: 1002, pct: -3.32 },
+  silver: { intl: 67.60, dom: 16.80, pct: -7.12 },
+  plat: { intl: 1925.80, dom: 504, pct: -2.36 }
+};
+
+function wobble(val, range) {
+  return val + (Math.random() - 0.5) * 2 * range;
+}
+
+function flashEl(el, direction) {
+  el.classList.remove('flash-down', 'flash-up');
+  void el.offsetWidth; // force reflow
+  el.classList.add(direction < 0 ? 'flash-down' : 'flash-up');
+}
+
+function tickPrices() {
+  // Gold
+  var oldGD = liveState.gold.dom;
+  liveState.gold.intl = wobble(liveState.gold.intl, 8);
+  liveState.gold.dom = wobble(liveState.gold.dom, 2);
+  liveState.gold.pct = wobble(liveState.gold.pct, 0.05);
+  var elGD = document.getElementById('dom-gold');
+  elGD.textContent = Math.round(liveState.gold.dom).toLocaleString();
+  flashEl(elGD, liveState.gold.dom - oldGD);
+  document.getElementById('intl-gold').textContent = liveState.gold.intl.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  document.getElementById('badge-gold').textContent = liveState.gold.pct.toFixed(2) + '%';
+  document.getElementById('au9999').textContent = wobble(999.23, 1.5).toFixed(2);
+
+  // Silver
+  var oldSD = liveState.silver.dom;
+  liveState.silver.intl = wobble(liveState.silver.intl, 0.3);
+  liveState.silver.dom = wobble(liveState.silver.dom, 0.05);
+  liveState.silver.pct = wobble(liveState.silver.pct, 0.08);
+  var elSD = document.getElementById('dom-silver');
+  elSD.textContent = liveState.silver.dom.toFixed(2);
+  flashEl(elSD, liveState.silver.dom - oldSD);
+  document.getElementById('intl-silver').textContent = liveState.silver.intl.toFixed(2);
+  document.getElementById('badge-silver').textContent = liveState.silver.pct.toFixed(2) + '%';
+
+  // Platinum
+  var oldPD = liveState.plat.dom;
+  liveState.plat.intl = wobble(liveState.plat.intl, 4);
+  liveState.plat.dom = wobble(liveState.plat.dom, 1.5);
+  liveState.plat.pct = wobble(liveState.plat.pct, 0.04);
+  var elPD = document.getElementById('dom-plat');
+  elPD.textContent = Math.round(liveState.plat.dom).toLocaleString();
+  flashEl(elPD, liveState.plat.dom - oldPD);
+  document.getElementById('intl-plat').textContent = liveState.plat.intl.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  document.getElementById('badge-plat').textContent = liveState.plat.pct.toFixed(2) + '%';
+}
+
+setInterval(tickPrices, 3000);
+</script>
+</body>
+</html>
